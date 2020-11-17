@@ -45,9 +45,12 @@
       "promptOnClose": false
     },
     {
-      "label": "demo: code-rating-feature",
+      "label": "demo: apply patch set",
       "type": "shell",
-      "command": "patches/code_star_rating.sh",
+      "command": "patches/apply_patch_set.sh",
+      "args": [
+        "${input:PATCH_SET_NAME}"
+      ],
       "group": "none",
       "isBackground": true,
       "problemMatcher": [],
@@ -124,6 +127,15 @@
         "europe-west2-b",
         "europe-west2-c",
         "europe-west1-a"
+      ]
+    },
+    {
+      "id": "PATCH_SET_NAME",
+      "type": "pickString",
+      "default": "containerize",
+      "description": "The GCP Compute zone for the resources",
+      "options": [
+        "containerize"
       ]
     }
   ]
