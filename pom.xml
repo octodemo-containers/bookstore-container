@@ -4,7 +4,7 @@
 
     <groupId>com.github.octodemo-db</groupId>
     <artifactId>bookstore</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>${revision}${changelist}${sha1}</version>
     <packaging>war</packaging>
 
     <name>${project.artifactId}</name>
@@ -24,8 +24,24 @@
         <log4j.version>2.12.1</log4j.version>
         <slf4j.version>2.0.0-alpha1</slf4j.version>
 
+        <!--
+            Properties used to create a CD style version number for the Maven build
+        -->
+        <revision>1.0.0</revision>
+        <changelist></changelist>
+        <sha1>-SNAPSHOT</sha1>
+
         <!-- Logging debug flag for jetty server when we run the maven jetty plugin -->
         <logj-debug>FALSE</logj-debug>
+
+        <!--
+            Properties for naming, tagging and deploying the Docker image, when running under the correct
+            operating system that supports this.
+        -->
+        <github.repository>octodemo-containers/bookstore-container</github.repository>
+        <!-- The container registry to publish to -->
+        <container.image.registry>ghcr.io</container.image.registry>
+        <container.image.name>octodemo-containers/${project.artifactId}</container.image.name>
     </properties>
 
     <dependencies>
@@ -139,6 +155,18 @@
                 </plugin>
 
                 <plugin>
+                    <groupId>io.fabric8</groupId>
+                    <artifactId>docker-maven-plugin</artifactId>
+                    <version>0.33.0</version>
+                </plugin>
+
+                <plugin>
+                    <groupId>com.github.ekryd.echo-maven-plugin</groupId>
+                    <artifactId>echo-maven-plugin</artifactId>
+                    <version>1.2.0</version>
+                </plugin>
+
+                <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
                     <version>3.2.0</version>
@@ -212,6 +240,142 @@
     </build>
 
     <profiles>
+        <!--
+            Profile to build a Docker container for running our WAR.
+            This will only activate on MacOS and Linux hosts as the container used as a base does not have a
+            corresponding Windows variant.
+        -->
+        <profile>
+            <id>build-container</id>
+            <activation>
+                <os>
+                    <family>!windows</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <!--
+                        Create the full image name (including registry) for the container being created. This is just lowercasing the name
+                        as the docker container image must be lowercase to pass checks. (Its a bit convoluted to use regex replace but its the
+                        simplest way to acheive this for now).
+                    -->
+		            <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>clean container image name full</id>
+                                <goals>
+                                    <goal>regex-property</goal>
+                                </goals>
+                                <configuration>
+                                    <name>container.image.name.full</name>
+                                    <value>${container.image.registry}/${container.image.name}</value>
+                                    <regex>\?</regex>
+                                    <toLowerCase>true</toLowerCase>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </configuration>
+                            </execution>
+
+                            <execution>
+                                <id>clean container image name</id>
+                                <goals>
+                                    <goal>regex-property</goal>
+                                </goals>
+                                <configuration>
+                                    <name>container.image.name</name>
+                                    <value>${container.image.name}</value>
+                                    <regex>\?</regex>
+                                    <toLowerCase>true</toLowerCase>
+                                    <failIfNoMatch>false</failIfNoMatch>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <plugin>
+                        <groupId>io.fabric8</groupId>
+                        <artifactId>docker-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>build-container</id>
+                                <goals>
+                                    <goal>build</goal>
+                                </goals>
+                                <phase>package</phase>
+                                <configuration>
+                                    <verbose>true</verbose>
+                                    <images>
+                                        <!--
+                                            Equivalent of a Dockerfile, it is defined here due to the build needing
+                                            to put the .war file we generate as the ROOT.war inside the container so
+                                            that Jetty can run it as the default Web App.
+                                        -->
+                                        <image>
+                                            <name>${container.image.name.full}</name>
+                                            <build>
+                                                <!-- This version has a vulnerability in it, upgrade to 9.4.31-jre11-slim to remove it. -->
+                                                <from>jetty:9.4.27-jre11-slim</from>
+                                                <assembly>
+                                                    <mode>dir</mode>
+                                                    <targetDir>/var/lib/jetty/webapps</targetDir>
+                                                    <descriptorRef>rootWar</descriptorRef>
+                                                </assembly>
+                                                <labels>
+                                                    <!-- <org.opencontainer.image.created></org.opencontainer.image.created> -->
+                                                    <org.opencontainers.image.authors>GitHub Solutions Engineering</org.opencontainers.image.authors>
+                                                    <org.opencontainers.image.url>${project.url}</org.opencontainers.image.url>
+                                                    <org.opencontainers.image.documentation>https://github.com/octodemo-containers/bookstore-container/README.md</org.opencontainers.image.documentation>
+                                                    <org.opencontainers.image.source>${project.url}</org.opencontainers.image.source>
+                                                    <org.opencontainers.image.version>${project.version}</org.opencontainers.image.version>
+                                                    <org.opencontainers.image.revision>${changelist}</org.opencontainers.image.revision>
+                                                    <org.opencontainers.image.vendor>GitHub</org.opencontainers.image.vendor>
+                                                    <org.opencontainers.image.licenses>MIT</org.opencontainers.image.licenses>
+                                                    <org.opencontainers.image.title>GitHub Solutions Engineering Bookstore</org.opencontainers.image.title>
+                                                    <org.opencontainers.image.description>${project.description}</org.opencontainers.image.description>
+                                                </labels>
+                                                <tags>
+                                                    <tag>${project.version}</tag>
+                                                </tags>
+                                            </build>
+                                        </image>
+                                    </images>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        Using the Maven echo-maven-plugin here to communicate with the GitHub Actions runtime
+                        to set some outputs that can be used in steps later in the workflow.
+
+                        This will expose the tag used when building the container and the registry that was used
+                        to deploy it to. Both of these values can be changed using properties in the build.
+                    -->
+                    <plugin>
+                        <groupId>com.github.ekryd.echo-maven-plugin</groupId>
+                        <artifactId>echo-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>github-actions-version</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>echo</goal>
+                                </goals>
+                                <configuration>
+                                    <message>Exporting Outputs for GitHub Actions
+                                        ::set-output name=container_registry::${container.image.registry}
+                                        ::set-output name=container_image::${container.image.name}
+                                        ::set-output name=container_version::${project.version}
+                                    </message>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
         <profile>
             <id>vscode-debug</id>
             <build>
